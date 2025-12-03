@@ -965,11 +965,11 @@ int main() {
     std::cout << "Building BVH acceleration structure..." << std::endl;
     scene.buildBVH();
     
-    // Setup camera
+    // Setup camera (a lot of diff angles to choose from but thinking this will show everything needed. might adjust as time goes on and more gets added)
     Camera camera(Vec3(-2.5, 2, 2.5), Vec3(0, 0, -1), Vec3(0, 1, 0), 
                   60.0, aspectRatio, 0.05, 5.0);
     
-    // Render
+    // Render and show progress in terminal 
     std::vector<std::vector<Vec3>> image(imageHeight, std::vector<Vec3>(imageWidth));
     
     std::cout << "Rendering " << imageWidth << "x" << imageHeight 
