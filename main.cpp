@@ -867,10 +867,10 @@ void writePPM(const std::string& filename, const std::vector<std::vector<Vec3>>&
 
 // Main rendering loop
 int main() {
-    const int imageWidth = 800;
-    const int imageHeight = 600;
+    const int imageWidth = 1200;
+    const int imageHeight = 900;
     const double aspectRatio = double(imageWidth) / imageHeight;
-    const int samplesPerPixel = 150;  // More samples for smoother image
+    const int samplesPerPixel = 150;  
     const int maxDepth = 50;
     
     Scene scene;
@@ -966,8 +966,8 @@ int main() {
     scene.buildBVH();
     
     // Setup camera
-    Camera camera(Vec3(0, 1, 3), Vec3(0, 0, -1), Vec3(0, 1, 0), 
-                  45.0, aspectRatio, 0.08, 3.5);
+    Camera camera(Vec3(-2.5, 2, 2.5), Vec3(0, 0, -1), Vec3(0, 1, 0), 
+                  60.0, aspectRatio, 0.05, 5.0);
     
     // Render
     std::vector<std::vector<Vec3>> image(imageHeight, std::vector<Vec3>(imageWidth));
