@@ -412,6 +412,67 @@ public:
     }
 };
 
+
+// Smooth triangle for normal interpolation feature addition
+class SmoothTriangle {
+public:
+    Vec3 v0, v1, v2;
+    Vec3 n0, n1, n2;
+    Material material;
+    
+    SmoothTriangle(Vec3 a, Vec3 b, Vec3 c, Vec3 na, Vec3 nb, Vec3 nc, Material mat) 
+        : v0(a), v1(b), v2(c), n0(na.normalize()), n1(nb.normalize()), n2(nc.normalize()), material(mat) {}
+    
+    HitRecord intersect(const Ray& ray) const {
+        HitRecord rec;
+        Vec3 edge1 = v1 - v0;
+        Vec3 edge2 = v2 - v0;
+        Vec3 h = ray.direction.cross(edge2);
+        double a = edge1.dot(h);
+        
+        if (a > -0.0001 && a < 0.0001)
+            return rec;
+        
+        double f = 1.0 / a;
+        Vec3 s = ray.origin - v0;
+        double u = f * s.dot(h);
+        
+        if (u < 0.0 || u > 1.0)
+            return rec;
+        
+        Vec3 q = s.cross(edge1);
+        double v = f * ray.direction.dot(q);
+        
+        if (v < 0.0 || u + v > 1.0)
+            return rec;
+        
+        double t = f * edge2.dot(q);
+        
+        if (t > 0.001) {
+            rec.t = t;
+            rec.point = ray.at(t);
+            double w = 1.0 - u - v;
+            Vec3 interpolatedNormal = (n0 * w + n1 * u + n2 * v).normalize();
+            rec.setFaceNormal(ray, interpolatedNormal);
+            rec.hit = true;
+            rec.material = material;
+            rec.u = u;
+            rec.v = v;
+        }
+        return rec;
+    }
+    
+    AABB boundingBox() const {
+        double minX = fmin(fmin(v0.x, v1.x), v2.x) - 0.0001;
+        double minY = fmin(fmin(v0.y, v1.y), v2.y) - 0.0001;
+        double minZ = fmin(fmin(v0.z, v1.z), v2.z) - 0.0001;
+        double maxX = fmax(fmax(v0.x, v1.x), v2.x) + 0.0001;
+        double maxY = fmax(fmax(v0.y, v1.y), v2.y) + 0.0001;
+        double maxZ = fmax(fmax(v0.z, v1.z), v2.z) + 0.0001;
+        return AABB(Vec3(minX, minY, minZ), Vec3(maxX, maxY, maxZ));
+    }
+};
+
 // BVH node for acceleration
 struct BVHNode {
     AABB box;
@@ -519,6 +580,7 @@ class Scene {
 public:
     std::vector<Sphere> spheres;
     std::vector<Triangle> triangles;
+    std::vector<SmoothTriangle> smoothTriangles;
     Vec3 backgroundColor;
     std::shared_ptr<BVHNode> bvhRoot;
     
@@ -530,6 +592,10 @@ public:
     
     void addTriangle(const Triangle& tri) {
         triangles.push_back(tri);
+    }
+
+    void addSmoothTriangle(const SmoothTriangle& tri){
+        smoothTriangles.push_back(tri);
     }
     
     // Build BVH tree for faster rendering
@@ -689,6 +755,12 @@ public:
             if (hit.hit && hit.t < closestHit.t)
                 closestHit = hit;
         }
+
+        for (const auto& smoothTri : smoothTriangles) {
+            HitRecord hit = smoothTri.intersect(ray);
+            if (hit.hit && hit.t < closestHit.t)
+                closestHit = hit;
+        }
         
         return closestHit;
     }
@@ -839,6 +911,7 @@ int main() {
                                 Vec3(2.5, 0.5, -2), 
                                 Vec3(2, -0.5, -2),
                                 Material::makeMetal(Vec3(0.9, 0.5, 0.1), 0.2)));
+
     
     // Add more random spheres
     for (int i = 0; i < 10; i++) {
@@ -856,6 +929,38 @@ int main() {
         
         scene.addSphere(Sphere(center, radius, mat));
     }
+    
+    Vec3 sphereCenter(0.5, 0.3, -2);
+    double r = 0.5;
+    
+    Vec3 top = sphereCenter + Vec3(0, r, 0);
+    Vec3 bottom = sphereCenter + Vec3(0, -r, 0);
+    Vec3 front = sphereCenter + Vec3(0, 0, r);
+    Vec3 back = sphereCenter + Vec3(0, 0, -r);
+    Vec3 left = sphereCenter + Vec3(-r, 0, 0);
+    Vec3 right = sphereCenter + Vec3(r, 0, 0);
+    
+    Vec3 nTop = Vec3(0, 1, 0);
+    Vec3 nBottom = Vec3(0, -1, 0);
+    Vec3 nFront = Vec3(0, 0, 1);
+    Vec3 nBack = Vec3(0, 0, -1);
+    Vec3 nLeft = Vec3(-1, 0, 0);
+    Vec3 nRight = Vec3(1, 0, 0);
+    
+    Material smoothMat = Material::makeDiffuse(Vec3(0.9, 0.5, 0.7));
+    
+    // Top pyramid
+    scene.addSmoothTriangle(SmoothTriangle(top, front, right, nTop, nFront, nRight, smoothMat));
+    scene.addSmoothTriangle(SmoothTriangle(top, right, back, nTop, nRight, nBack, smoothMat));
+    scene.addSmoothTriangle(SmoothTriangle(top, back, left, nTop, nBack, nLeft, smoothMat));
+    scene.addSmoothTriangle(SmoothTriangle(top, left, front, nTop, nLeft, nFront, smoothMat));
+    
+    // Bottom pyramid
+    scene.addSmoothTriangle(SmoothTriangle(bottom, right, front, nBottom, nRight, nFront, smoothMat));
+    scene.addSmoothTriangle(SmoothTriangle(bottom, back, right, nBottom, nBack, nRight, smoothMat));
+    scene.addSmoothTriangle(SmoothTriangle(bottom, left, back, nBottom, nLeft, nBack, smoothMat));
+    scene.addSmoothTriangle(SmoothTriangle(bottom, front, left, nBottom, nFront, nLeft, smoothMat));
+
     
     std::cout << "Building BVH acceleration structure..." << std::endl;
     scene.buildBVH();
