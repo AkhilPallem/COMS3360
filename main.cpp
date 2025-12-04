@@ -313,30 +313,34 @@ public:
         HitRecord rec;
         Vec3 oc = ray.origin - center;
         double a = ray.direction.dot(ray.direction);
-        double b = 2.0 * oc.dot(ray.direction);
+        double half_b = oc.dot(ray.direction);
         double c = oc.dot(oc) - radius * radius;
-        double discriminant = b * b - 4 * a * c;
-        
-        if (discriminant >= 0) {
-            double t = (-b - sqrt(discriminant)) / (2.0 * a);
-            if (t > 0.001) { 
-                rec.t = t;
-                rec.point = ray.at(t);
-                Vec3 outwardNormal = (rec.point - center) / radius;
-                rec.setFaceNormal(ray, outwardNormal);
-                rec.hit = true;
-                rec.material = material;
-                
-                // Calculate UV coordinates
-                Vec3 p = outwardNormal;
-                double phi = atan2(p.z, p.x);
-                double theta = asin(p.y);
-                rec.u = 1.0 - (phi + M_PI) / (2.0 * M_PI);
-                rec.v = (theta + M_PI / 2.0) / M_PI;
-                
-                return rec;
-            }
+
+        double discriminant = half_b * half_b - a * c;
+        if (discriminant < 0) return rec;
+
+        double sqrtd = sqrt(discriminant);
+
+        // Try nearer root first
+        double t = (-half_b - sqrtd) / a;
+        if (t <= 0.001) {
+            t = (-half_b + sqrtd) / a;
+            if (t <= 0.001) return rec;
         }
+
+        rec.t = t;
+        rec.point = ray.at(t);
+        Vec3 outwardNormal = (rec.point - center) / radius;  
+        rec.setFaceNormal(ray, outwardNormal);
+        rec.hit = true;
+        rec.material = material;
+
+        Vec3 p = outwardNormal;
+        double phi = atan2(p.z, p.x);
+        double theta = asin(p.y);
+        rec.u = 1.0 - (phi + M_PI) / (2.0 * M_PI);
+        rec.v = (theta + M_PI / 2.0) / M_PI;
+
         return rec;
     }
     
@@ -870,7 +874,7 @@ int main() {
     const int imageWidth = 1200;
     const int imageHeight = 900;
     const double aspectRatio = double(imageWidth) / imageHeight;
-    const int samplesPerPixel = 150;  
+    const int samplesPerPixel = 600;  
     const int maxDepth = 50;
     
     Scene scene;
@@ -885,32 +889,26 @@ int main() {
                             Material::makeDiffuse(Vec3(0.7, 0.3, 0.3))));
     
     // Glass sphere
-    scene.addSphere(Sphere(Vec3(-1, 0, -1), 0.5, 
-                            Material::makeDielectric(1.5)));
-    scene.addSphere(Sphere(Vec3(-1, 0, -1), -0.45, 
-                            Material::makeDielectric(1.5)));
+    scene.addSphere(Sphere(Vec3(-1.0, 0.0, -0.8),  0.5,  Material::makeDielectric(1.5)));
+    scene.addSphere(Sphere(Vec3(-1.0, 0.0, -0.8), -0.49, Material::makeDielectric(1.5)));
     
     // Metal sphere
     scene.addSphere(Sphere(Vec3(1, 0, -1), 0.5, 
                             Material::makeMetal(Vec3(0.8, 0.8, 0.8), 0.3)));
     
     // Light sources
-    scene.addSphere(Sphere(Vec3(-2, 3, 0), 0.5, 
-                            Material::makeEmissive(Vec3(1, 0.9, 0.8), 5.0)));
-    scene.addSphere(Sphere(Vec3(2, 2.5, -2), 0.4, 
-                            Material::makeEmissive(Vec3(0.8, 0.9, 1), 4.0)));
+    scene.addSphere(Sphere(Vec3(-2, 3, 0), 0.6,   Material::makeEmissive(Vec3(1.0, 0.9, 0.8), 40.0)));
+
+    // Triangles 
+    scene.addTriangle(Triangle(Vec3(-2, -0.3, -2), 
+                                Vec3(-1, -0.3, -2), 
+                                Vec3(-1.5, 1.2, -2),
+                                Material::makeDiffuse(Vec3(0.2, 0.9, 0.3))));
     
-    // Triangle 
-    scene.addTriangle(Triangle(Vec3(-1.5, -0.5, -2.5), 
-                                Vec3(-0.5, -0.5, -2.5), 
-                                Vec3(-1, 1, -2.5),
-                                Material::makeDiffuse(Vec3(0.2, 0.8, 0.3))));
-    
-    // Add a second triangle for fun
-    scene.addTriangle(Triangle(Vec3(1.5, 0.5, -2), 
-                                Vec3(2.5, 0.5, -2), 
-                                Vec3(2, -0.5, -2),
-                                Material::makeMetal(Vec3(0.9, 0.5, 0.1), 0.2)));
+    scene.addTriangle(Triangle(Vec3(1.5, 0.2, -1.5), 
+                                Vec3(2.8, 0.2, -1.5), 
+                                Vec3(2.15, 1.5, -1.5),
+                                Material::makeMetal(Vec3(0.95, 0.6, 0.1), 0.15)));
 
     
     // Add more random spheres
@@ -930,8 +928,8 @@ int main() {
         scene.addSphere(Sphere(center, radius, mat));
     }
     
-    Vec3 sphereCenter(0.5, 0.3, -2);
-    double r = 0.5;
+    Vec3 sphereCenter(0.5, 0.4, -2);
+    double r = 1.0;
     
     Vec3 top = sphereCenter + Vec3(0, r, 0);
     Vec3 bottom = sphereCenter + Vec3(0, -r, 0);
@@ -947,7 +945,7 @@ int main() {
     Vec3 nLeft = Vec3(-1, 0, 0);
     Vec3 nRight = Vec3(1, 0, 0);
     
-    Material smoothMat = Material::makeDiffuse(Vec3(0.9, 0.5, 0.7));
+    Material smoothMat = Material::makeDiffuse(Vec3(0.95, 0.7, 0.85));
     
     // Top pyramid
     scene.addSmoothTriangle(SmoothTriangle(top, front, right, nTop, nFront, nRight, smoothMat));
@@ -965,11 +963,11 @@ int main() {
     std::cout << "Building BVH acceleration structure..." << std::endl;
     scene.buildBVH();
     
-    // Setup camera
-    Camera camera(Vec3(-2.5, 2, 2.5), Vec3(0, 0, -1), Vec3(0, 1, 0), 
-                  60.0, aspectRatio, 0.05, 5.0);
+    // Setup camera (a lot of diff angles to choose from but thinking this will show everything needed. might adjust as time goes on and more gets added)
+    Camera camera( Vec3(-1.8, 1.8, 2.8), Vec3(0.3, 0.2, -1.8), Vec3(0, 1, 0),65.0, aspectRatio, 0.08, 6.0              
+);
     
-    // Render
+    // Render and show progress in terminal 
     std::vector<std::vector<Vec3>> image(imageHeight, std::vector<Vec3>(imageWidth));
     
     std::cout << "Rendering " << imageWidth << "x" << imageHeight 
