@@ -482,11 +482,12 @@ struct BVHNode {
     AABB box;
     std::shared_ptr<BVHNode> left;
     std::shared_ptr<BVHNode> right;
-    int sphereIdx;
-    int triangleIdx;
-    bool isLeaf;
-    
-    BVHNode() : sphereIdx(-1), triangleIdx(-1), isLeaf(false) {}
+
+    std::vector<int> sphereIndices;
+    std::vector<int> triangleIndices;
+    std::vector<int> smoothTriangleIndices;
+
+    bool isLeaf = false;
 };
 
 // Camera with configurable settings
@@ -603,138 +604,87 @@ public:
     }
     
     // Build BVH tree for faster rendering
-    void buildBVH() {
-        if (spheres.empty() && triangles.empty()) return;
-        
-        std::vector<int> sphereIndices;
-        std::vector<int> triangleIndices;
-        
-        for (size_t i = 0; i < spheres.size(); i++)
-            sphereIndices.push_back(i);
-        for (size_t i = 0; i < triangles.size(); i++)
-            triangleIndices.push_back(i);
-        
-        bvhRoot = buildBVHRecursive(sphereIndices, triangleIndices, 0);
-    }
+   void buildBVH() {
+    std::vector<int> s, t, st;
+    for (size_t i = 0; i < spheres.size(); ++i) s.push_back(i);
+    for (size_t i = 0; i < triangles.size(); ++i) t.push_back(i);
+    for (size_t i = 0; i < smoothTriangles.size(); ++i) st.push_back(i);
+    bvhRoot = buildBVHRecursive(s, t, st, 0);
+}
     
-    std::shared_ptr<BVHNode> buildBVHRecursive(std::vector<int>& sphereIndices, 
-                                                std::vector<int>& triangleIndices, 
-                                                int depth) {
-        auto node = std::make_shared<BVHNode>();
-        
-        bool first = true;
-        for (int idx : sphereIndices) {
-            AABB box = spheres[idx].boundingBox();
-            if (first) {
-                node->box = box;
-                first = false;
-            } else {
-                node->box = AABB::surroundingBox(node->box, box);
-            }
-        }
-        for (int idx : triangleIndices) {
-            AABB box = triangles[idx].boundingBox();
-            if (first) {
-                node->box = box;
-                first = false;
-            } else {
-                node->box = AABB::surroundingBox(node->box, box);
-            }
-        }
-        
-        // Leaf node if small enough
-        if (sphereIndices.size() + triangleIndices.size() <= 4 || depth > 20) {
-            node->isLeaf = true;
-            if (!sphereIndices.empty()) node->sphereIdx = sphereIndices[0];
-            if (!triangleIndices.empty()) node->triangleIdx = triangleIndices[0];
-            return node;
-        }
-        
-        // Split along longest axis
-        Vec3 extent = node->box.max - node->box.min;
-        int axis = extent.x > extent.y ? (extent.x > extent.z ? 0 : 2) : (extent.y > extent.z ? 1 : 2);
-        
-        double midpoint = axis == 0 ? (node->box.min.x + node->box.max.x) / 2 :
-                         axis == 1 ? (node->box.min.y + node->box.max.y) / 2 :
-                                    (node->box.min.z + node->box.max.z) / 2;
-        
-        std::vector<int> leftSpheres, rightSpheres;
-        std::vector<int> leftTriangles, rightTriangles;
-        
-        for (int idx : sphereIndices) {
-            double center = axis == 0 ? spheres[idx].center.x :
-                           axis == 1 ? spheres[idx].center.y : spheres[idx].center.z;
-            if (center < midpoint)
-                leftSpheres.push_back(idx);
-            else
-                rightSpheres.push_back(idx);
-        }
-        
-        for (int idx : triangleIndices) {
-            Vec3 center = (triangles[idx].v0 + triangles[idx].v1 + triangles[idx].v2) / 3.0;
-            double centerCoord = axis == 0 ? center.x : axis == 1 ? center.y : center.z;
-            if (centerCoord < midpoint)
-                leftTriangles.push_back(idx);
-            else
-                rightTriangles.push_back(idx);
-        }
+    std::shared_ptr<BVHNode> buildBVHRecursive(
+    std::vector<int> sphereIdx,
+    std::vector<int> triIdx,
+    std::vector<int> smoothTriIdx,
+    int depth)
+{
+    auto node = std::make_shared<BVHNode>();
 
-        if (leftSpheres.empty() && leftTriangles.empty()) {
-            if (!rightSpheres.empty()) leftSpheres.push_back(rightSpheres.back()), rightSpheres.pop_back();
-            if (!rightTriangles.empty()) leftTriangles.push_back(rightTriangles.back()), rightTriangles.pop_back();
-        }
-        if (rightSpheres.empty() && rightTriangles.empty()) {
-            if (!leftSpheres.empty()) rightSpheres.push_back(leftSpheres.back()), leftSpheres.pop_back();
-            if (!leftTriangles.empty()) rightTriangles.push_back(leftTriangles.back()), leftTriangles.pop_back();
-        }
-        
-        if (!leftSpheres.empty() || !leftTriangles.empty())
-            node->left = buildBVHRecursive(leftSpheres, leftTriangles, depth + 1);
-        if (!rightSpheres.empty() || !rightTriangles.empty())
-            node->right = buildBVHRecursive(rightSpheres, rightTriangles, depth + 1);
-        
+    bool first = true;
+    for (int i : sphereIdx) {
+        AABB b = spheres[i].boundingBox();
+        node->box = first ? b : AABB::surroundingBox(node->box, b);
+        first = false;
+    }
+    for (int i : triIdx) {
+        AABB b = triangles[i].boundingBox();
+        node->box = first ? b : AABB::surroundingBox(node->box, b);
+        first = false;
+    }
+    for (int i : smoothTriIdx) {
+        AABB b = smoothTriangles[i].boundingBox();
+        node->box = first ? b : AABB::surroundingBox(node->box, b);
+        first = false;
+    }
+
+    int total = sphereIdx.size() + triIdx.size() + smoothTriIdx.size();
+    if (total <= 4 || depth > 20) {
+        node->isLeaf = true;
+        node->sphereIndices = std::move(sphereIdx);
+        node->triangleIndices = std::move(triIdx);
+        node->smoothTriangleIndices = std::move(smoothTriIdx);
         return node;
     }
+
+    Vec3 diag = node->box.max - node->box.min;
+    int axis = (diag.x > diag.y) ? (diag.x > diag.z ? 0 : 2) : (diag.y > diag.z ? 1 : 2);
+
+    auto getCoord = [&](const Vec3& p) { return axis == 0 ? p.x : (axis == 1 ? p.y : p.z); };
+
+    std::vector<int> leftS, rightS, leftT, rightT, leftST, rightST;
+
+    for (int i : sphereIdx)   (getCoord(spheres[i].center) < getCoord(node->box.min + node->box.max) * 0.5 ? leftS : rightS).push_back(i);
+    for (int i : triIdx)      (getCoord((triangles[i].v0 + triangles[i].v1 + triangles[i].v2) / 3.0) < getCoord(node->box.min + node->box.max) * 0.5 ? leftT : rightT).push_back(i);
+    for (int i : smoothTriIdx)(getCoord((smoothTriangles[i].v0 + smoothTriangles[i].v1 + smoothTriangles[i].v2) / 3.0) < getCoord(node->box.min + node->box.max) * 0.5 ? leftST : rightST).push_back(i);
+
+    if (leftS.empty() && leftT.empty() && leftST.empty()) { leftS = std::move(rightS); rightS.clear(); leftT = std::move(rightT); rightT.clear(); leftST = std::move(rightST); rightST.clear(); }
+    if (rightS.empty() && rightT.empty() && rightST.empty()) { rightS = std::move(leftS); leftS.clear(); rightT = std::move(leftT); leftT.clear(); rightST = std::move(leftST); leftST.clear(); }
+
+    node->left  = buildBVHRecursive(leftS,  leftT,  leftST,  depth + 1);
+    node->right = buildBVHRecursive(rightS, rightT, rightST, depth + 1);
+    return node;
+}
     
     HitRecord intersectBVH(const Ray& ray, const std::shared_ptr<BVHNode>& node) const {
-        HitRecord rec;
-        if (!node || !node->box.hit(ray, 0.001, std::numeric_limits<double>::max()))
-            return rec;
-        
-        if (node->isLeaf) {
-            HitRecord closest;
-            closest.t = std::numeric_limits<double>::max();
-            
-            if (node->sphereIdx >= 0) {
-                HitRecord hit = spheres[node->sphereIdx].intersect(ray);
-                if (hit.hit && hit.t < closest.t) {
-                    closest = hit;
-                    if (spheres[node->sphereIdx].hasTexture) {
-                        Vec3 texColor = spheres[node->sphereIdx].texture.sample(hit.u, hit.v);
-                        closest.material.albedo = closest.material.albedo * texColor;
-                    }
-                }
+    HitRecord best; best.t = 1e30;
+    if (!node || !node->box.hit(ray, 0.001, best.t)) return best;
+
+    if (node->isLeaf) {
+        for (int i : node->sphereIndices) {
+            HitRecord h = spheres[i].intersect(ray);
+            if (h.hit && h.t < best.t) { best = h;
+                if (spheres[i].hasTexture) best.material.albedo = best.material.albedo * spheres[i].texture.sample(h.u, h.v);
             }
-            
-            if (node->triangleIdx >= 0) {
-                HitRecord hit = triangles[node->triangleIdx].intersect(ray);
-                if (hit.hit && hit.t < closest.t)
-                    closest = hit;
-            }
-            
-            return closest;
         }
-        
-        HitRecord leftHit = node->left ? intersectBVH(ray, node->left) : HitRecord();
-        HitRecord rightHit = node->right ? intersectBVH(ray, node->right) : HitRecord();
-        
-        if (leftHit.hit && rightHit.hit)
-            return leftHit.t < rightHit.t ? leftHit : rightHit;
-        if (leftHit.hit) return leftHit;
-        if (rightHit.hit) return rightHit;
-        
-        return rec;
+        for (int i : node->triangleIndices) { HitRecord h = triangles[i].intersect(ray); if (h.hit && h.t < best.t) best = h; }
+        for (int i : node->smoothTriangleIndices) { HitRecord h = smoothTriangles[i].intersect(ray); if (h.hit && h.t < best.t) best = h; }
+        return best;
     }
+
+    HitRecord l = intersectBVH(ray, node->left);
+    HitRecord r = intersectBVH(ray, node->right);
+    return (l.hit && (!r.hit || l.t < r.t)) ? l : r;
+}
     
     HitRecord intersect(const Ray& ray) const {
         if (bvhRoot)
@@ -884,20 +834,20 @@ int main() {
     scene.addSphere(Sphere(Vec3(0, -100.5, -1), 100, 
                             Material::makeDiffuse(Vec3(1, 1, 1)), checker));
     
-    // Diffuse sphere
-    scene.addSphere(Sphere(Vec3(0, 0, -1), 0.5, 
-                            Material::makeDiffuse(Vec3(0.7, 0.3, 0.3))));
-    
-    // Glass sphere
-    scene.addSphere(Sphere(Vec3(-1.0, 0.0, -0.8),  0.5,  Material::makeDielectric(1.5)));
-    scene.addSphere(Sphere(Vec3(-1.0, 0.0, -0.8), -0.49, Material::makeDielectric(1.5)));
-    
-    // Metal sphere
-    scene.addSphere(Sphere(Vec3(1, 0, -1), 0.5, 
-                            Material::makeMetal(Vec3(0.8, 0.8, 0.8), 0.3)));
+    //all spheres in the scene
+    scene.addSphere(Sphere(Vec3(-1.1, 0.0, -0.8), 0.5,  Material::makeDielectric(1.5)));
+    scene.addSphere(Sphere(Vec3(-1.1, 0.0, -0.8), -0.49, Material::makeDielectric(1.5)));
+
+    // Red diffuse (center)
+    scene.addSphere(Sphere(Vec3( 0.0, 0.0, -1.0), 0.5,  Material::makeDiffuse(Vec3(0.8, 0.2, 0.2))));
+
+    // Shiny metal (right)
+    scene.addSphere(Sphere(Vec3( 1.1, 0.0, -0.9), 0.5,  Material::makeMetal(Vec3(0.9, 0.9, 0.95), 0.05)));
     
     // Light sources
-    scene.addSphere(Sphere(Vec3(-2, 3, 0), 0.6,   Material::makeEmissive(Vec3(1.0, 0.9, 0.8), 40.0)));
+    scene.addSphere(Sphere(Vec3(-2.0, 3.0,  0.0), 0.6, Material::makeEmissive(Vec3(1.0, 0.95, 0.9), 70)));
+    //scene.addSphere(Sphere(Vec3( 2.0, 2.8, -1.0), 0.5, Material::makeEmissive(Vec3(0.9, 0.95, 1.0), 80)));
+    //scene.addSphere(Sphere(Vec3(-0.3, 2.2,  0.5), 0.4, Material::makeEmissive(Vec3(1.0, 1.0, 1.0), 90)));
 
     // Triangles 
     scene.addTriangle(Triangle(Vec3(-2, -0.3, -2), 
@@ -910,23 +860,6 @@ int main() {
                                 Vec3(2.15, 1.5, -1.5),
                                 Material::makeMetal(Vec3(0.95, 0.6, 0.1), 0.15)));
 
-    
-    // Add more random spheres
-    for (int i = 0; i < 10; i++) {
-        Vec3 center(randomDouble(-3, 3), randomDouble(-0.3, 0.3), randomDouble(-3, -1));
-        double radius = randomDouble(0.1, 0.3);
-        
-        int matType = int(randomDouble(0, 3));
-        Material mat;
-        if (matType == 0)
-            mat = Material::makeDiffuse(Vec3::random());
-        else if (matType == 1)
-            mat = Material::makeMetal(Vec3::random(), randomDouble(0, 0.5));
-        else
-            mat = Material::makeDielectric(1.5);
-        
-        scene.addSphere(Sphere(center, radius, mat));
-    }
     
     Vec3 sphereCenter(0.5, 0.4, -2);
     double r = 1.0;
@@ -964,8 +897,7 @@ int main() {
     scene.buildBVH();
     
     // Setup camera (a lot of diff angles to choose from but thinking this will show everything needed. might adjust as time goes on and more gets added)
-    Camera camera( Vec3(-1.8, 1.8, 2.8), Vec3(0.3, 0.2, -1.8), Vec3(0, 1, 0),65.0, aspectRatio, 0.08, 6.0              
-);
+    Camera camera(Vec3(-1.8, 1.8, 2.8), Vec3(0.0, 0.1, -1.0), Vec3(0, 1, 0), 65.0, aspectRatio, 0.08, 6.0);
     
     // Render and show progress in terminal 
     std::vector<std::vector<Vec3>> image(imageHeight, std::vector<Vec3>(imageWidth));
