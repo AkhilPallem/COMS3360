@@ -27,5 +27,5 @@ I forgot to make a git repo when I started this project, so the first commit is 
 - Gamma correction so colors look right
 
 ## building and running:
-g++ -O3 -std=c++17 main.cpp -o raytracer
-./raytracer 
+- g++ -O3 -std=c++17 main.cpp -o raytracer
+- ./raytracer 
