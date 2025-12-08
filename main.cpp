@@ -927,5 +927,6 @@ int main() {
     
     writePPM("output.ppm", image);
     std::cout << "Done! Image saved as output.ppm" << std::endl;
+    std::cout << "Command to convert to PNG: convert output.ppm output.png" << std::endl;
     return 0;
 }
