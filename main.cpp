@@ -240,7 +240,6 @@ public:
                 }
             }
         } else {
-            // ASCII format
             for (int j = 0; j < tex.height; j++) {
                 for (int i = 0; i < tex.width; i++) {
                     int r, g, b;
@@ -608,7 +607,6 @@ bool scatter(const Ray& rayIn, const HitRecord& rec, Vec3& attenuation, Ray& sca
         bool cannotRefract = refractionRatio * sinTheta > 1.0;
         Vec3 direction;
         
-        // Schlick's approximation
         auto reflectance = [](double cosine, double refIdx) {
             double r0 = (1 - refIdx) / (1 + refIdx);
             r0 = r0 * r0;
@@ -859,7 +857,7 @@ public:
     }
 };
 
-// Write image to PPM file
+// Write image to PPM file 
 void writePPM(const std::string& filename, const std::vector<std::vector<Vec3>>& image) {
     int width = image[0].size();
     int height = image.size();
@@ -873,6 +871,11 @@ void writePPM(const std::string& filename, const std::vector<std::vector<Vec3>>&
     for (int j = height - 1; j >= 0; --j) {
         for (int i = 0; i < width; ++i) {
             Vec3 color = image[j][i];
+            
+            color.x = color.x / (1.0 + color.x);
+            color.y = color.y / (1.0 + color.y);
+            color.z = color.z / (1.0 + color.z);
+            
             color.x = sqrt(color.x);
             color.y = sqrt(color.y);
             color.z = sqrt(color.z);
@@ -959,11 +962,9 @@ int main() {
     scene.addSmoothTriangle(SmoothTriangle(bottom, left, back, nBottom, nLeft, nBack, smoothMat));
     scene.addSmoothTriangle(SmoothTriangle(bottom, front, left, nBottom, nFront, nLeft, smoothMat));
 
-    scene.addQuad(Quad(Vec3(-2.2, -0.4, -2.8), Vec3(0.9, 0, 0), Vec3(0, 1.3, 0), 
-                       Material::makeDiffuse(Vec3(0.2, 0.7, 0.9))));
+    scene.addQuad(Quad(Vec3(-2.2, -0.4, -2.8), Vec3(0.9, 0, 0), Vec3(0, 1.3, 0), Material::makeDiffuse(Vec3(0.2, 0.7, 0.9))));
     
-    scene.addQuad(Quad(Vec3(1.8, -0.3, -2.2), Vec3(0.7, 0, -0.2), Vec3(0, 1.1, 0), 
-                       Material::makeMetal(Vec3(0.9, 0.4, 0.6), 0.15)));
+    scene.addQuad(Quad(Vec3(1.8, -0.3, -2.2), Vec3(0.7, 0, -0.2), Vec3(0, 1.1, 0), Material::makeMetal(Vec3(0.9, 0.4, 0.6), 0.15)));
 
     
     std::cout << "Building BVH acceleration structure..." << std::endl;
