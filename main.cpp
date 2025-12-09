@@ -477,6 +477,52 @@ public:
     }
 };
 
+// Quad feature class 
+class Quad {
+public:
+    Vec3 corner;
+    Vec3 u, v;  
+    Material material;
+    
+    Quad(Vec3 c, Vec3 edge1, Vec3 edge2, Material mat): corner(c), u(edge1), v(edge2), material(mat) {}
+    
+    HitRecord intersect(const Ray& ray) const {
+        Vec3 p0 = corner;
+        Vec3 p1 = corner + u;
+        Vec3 p2 = corner + u + v;
+        Vec3 p3 = corner + v;
+        
+        Triangle tri1(p0, p1, p2, material);
+        HitRecord hit1 = tri1.intersect(ray);
+        
+        Triangle tri2(p0, p2, p3, material);
+        HitRecord hit2 = tri2.intersect(ray);
+        
+        if (hit1.hit && hit2.hit)
+            return hit1.t < hit2.t ? hit1 : hit2;
+        if (hit1.hit) return hit1;
+        if (hit2.hit) return hit2;
+        
+        return HitRecord();
+    }
+    
+    AABB boundingBox() const {
+        Vec3 p0 = corner;
+        Vec3 p1 = corner + u;
+        Vec3 p2 = corner + u + v;
+        Vec3 p3 = corner + v;
+        
+        double minX = fmin(fmin(fmin(p0.x, p1.x), p2.x), p3.x) - 0.0001;
+        double minY = fmin(fmin(fmin(p0.y, p1.y), p2.y), p3.y) - 0.0001;
+        double minZ = fmin(fmin(fmin(p0.z, p1.z), p2.z), p3.z) - 0.0001;
+        double maxX = fmax(fmax(fmax(p0.x, p1.x), p2.x), p3.x) + 0.0001;
+        double maxY = fmax(fmax(fmax(p0.y, p1.y), p2.y), p3.y) + 0.0001;
+        double maxZ = fmax(fmax(fmax(p0.z, p1.z), p2.z), p3.z) + 0.0001;
+        
+        return AABB(Vec3(minX, minY, minZ), Vec3(maxX, maxY, maxZ));
+    }
+};
+
 // BVH node for acceleration
 struct BVHNode {
     AABB box;
@@ -486,6 +532,7 @@ struct BVHNode {
     std::vector<int> sphereIndices;
     std::vector<int> triangleIndices;
     std::vector<int> smoothTriangleIndices;
+    std::vector<int> quadIndices;
 
     bool isLeaf = false;
 };
@@ -588,6 +635,7 @@ public:
     std::vector<SmoothTriangle> smoothTriangles;
     Vec3 backgroundColor;
     std::shared_ptr<BVHNode> bvhRoot;
+    std::vector<Quad> quads;
     
     Scene() : backgroundColor(0.7, 0.8, 1.0) {}
     
@@ -603,19 +651,25 @@ public:
         smoothTriangles.push_back(tri);
     }
     
+    void addQuad(const Quad& quad) { 
+        quads.push_back(quad);
+    }
+
     // Build BVH tree for faster rendering
    void buildBVH() {
-    std::vector<int> s, t, st;
+    std::vector<int> s, t, st, q;
     for (size_t i = 0; i < spheres.size(); ++i) s.push_back(i);
     for (size_t i = 0; i < triangles.size(); ++i) t.push_back(i);
     for (size_t i = 0; i < smoothTriangles.size(); ++i) st.push_back(i);
-    bvhRoot = buildBVHRecursive(s, t, st, 0);
+    for (size_t i = 0; i < quads.size(); ++i) q.push_back(i);
+    bvhRoot = buildBVHRecursive(s, t, st, q, 0);
 }
     
     std::shared_ptr<BVHNode> buildBVHRecursive(
     std::vector<int> sphereIdx,
     std::vector<int> triIdx,
     std::vector<int> smoothTriIdx,
+    std::vector<int> quadIdx,
     int depth)
 {
     auto node = std::make_shared<BVHNode>();
@@ -636,6 +690,11 @@ public:
         node->box = first ? b : AABB::surroundingBox(node->box, b);
         first = false;
     }
+    for (int i : quadIdx) {
+        AABB b = quads[i].boundingBox();
+        node->box = first ? b : AABB::surroundingBox(node->box, b);
+        first = false;
+    }
 
     int total = sphereIdx.size() + triIdx.size() + smoothTriIdx.size();
     if (total <= 4 || depth > 20) {
@@ -643,6 +702,7 @@ public:
         node->sphereIndices = std::move(sphereIdx);
         node->triangleIndices = std::move(triIdx);
         node->smoothTriangleIndices = std::move(smoothTriIdx);
+        node->quadIndices = std::move(quadIdx);
         return node;
     }
 
@@ -651,17 +711,18 @@ public:
 
     auto getCoord = [&](const Vec3& p) { return axis == 0 ? p.x : (axis == 1 ? p.y : p.z); };
 
-    std::vector<int> leftS, rightS, leftT, rightT, leftST, rightST;
+    std::vector<int> leftS, rightS, leftT, rightT, leftST, rightST, leftQ, rightQ;
 
     for (int i : sphereIdx)   (getCoord(spheres[i].center) < getCoord(node->box.min + node->box.max) * 0.5 ? leftS : rightS).push_back(i);
     for (int i : triIdx)      (getCoord((triangles[i].v0 + triangles[i].v1 + triangles[i].v2) / 3.0) < getCoord(node->box.min + node->box.max) * 0.5 ? leftT : rightT).push_back(i);
     for (int i : smoothTriIdx)(getCoord((smoothTriangles[i].v0 + smoothTriangles[i].v1 + smoothTriangles[i].v2) / 3.0) < getCoord(node->box.min + node->box.max) * 0.5 ? leftST : rightST).push_back(i);
+    for (int i : quadIdx)(getCoord(quads[i].corner + (quads[i].u + quads[i].v) * 0.5) < getCoord(node->box.min + node->box.max) * 0.5 ? leftQ : rightQ).push_back(i);
 
-    if (leftS.empty() && leftT.empty() && leftST.empty()) { leftS = std::move(rightS); rightS.clear(); leftT = std::move(rightT); rightT.clear(); leftST = std::move(rightST); rightST.clear(); }
-    if (rightS.empty() && rightT.empty() && rightST.empty()) { rightS = std::move(leftS); leftS.clear(); rightT = std::move(leftT); leftT.clear(); rightST = std::move(leftST); leftST.clear(); }
+    if (leftS.empty() && leftT.empty() && leftST.empty() && leftQ.empty()) { leftS = std::move(rightS); rightS.clear(); leftT = std::move(rightT); rightT.clear(); leftST = std::move(rightST); rightST.clear(); leftQ = std::move(rightQ); rightQ.clear(); } 
+    if (rightS.empty() && rightT.empty() && rightST.empty() && rightQ.empty()) { rightS = std::move(leftS); leftS.clear(); rightT = std::move(leftT); leftT.clear(); rightST = std::move(leftST); leftST.clear(); rightQ = std::move(leftQ); leftQ.clear(); }
 
-    node->left  = buildBVHRecursive(leftS,  leftT,  leftST,  depth + 1);
-    node->right = buildBVHRecursive(rightS, rightT, rightST, depth + 1);
+    node->left  = buildBVHRecursive(leftS,  leftT,  leftST,  leftQ, depth + 1);
+    node->right = buildBVHRecursive(rightS, rightT, rightST, rightQ, depth + 1);
     return node;
 }
     
@@ -678,6 +739,7 @@ public:
         }
         for (int i : node->triangleIndices) { HitRecord h = triangles[i].intersect(ray); if (h.hit && h.t < best.t) best = h; }
         for (int i : node->smoothTriangleIndices) { HitRecord h = smoothTriangles[i].intersect(ray); if (h.hit && h.t < best.t) best = h; }
+        for (int i : node->quadIndices) { HitRecord h = quads[i].intersect(ray); if (h.hit && h.t < best.t) best = h; }
         return best;
     }
 
@@ -712,6 +774,12 @@ public:
 
         for (const auto& smoothTri : smoothTriangles) {
             HitRecord hit = smoothTri.intersect(ray);
+            if (hit.hit && hit.t < closestHit.t)
+                closestHit = hit;
+        }
+
+        for (const auto& quad : quads) { 
+            HitRecord hit = quad.intersect(ray);
             if (hit.hit && hit.t < closestHit.t)
                 closestHit = hit;
         }
@@ -819,7 +887,6 @@ void writePPM(const std::string& filename, const std::vector<std::vector<Vec3>>&
     fclose(f);
 }
 
-// Main rendering loop
 int main() {
     const int imageWidth = 1200;
     const int imageHeight = 900;
@@ -829,7 +896,7 @@ int main() {
     
     Scene scene;
     
-    // Ground plane with checkerboard
+    // Ground checkerboard 
     Texture checker = Texture::makeCheckerboard(16);
     scene.addSphere(Sphere(Vec3(0, -100.5, -1), 100, 
                             Material::makeDiffuse(Vec3(1, 1, 1)), checker));
@@ -891,6 +958,12 @@ int main() {
     scene.addSmoothTriangle(SmoothTriangle(bottom, back, right, nBottom, nBack, nRight, smoothMat));
     scene.addSmoothTriangle(SmoothTriangle(bottom, left, back, nBottom, nLeft, nBack, smoothMat));
     scene.addSmoothTriangle(SmoothTriangle(bottom, front, left, nBottom, nFront, nLeft, smoothMat));
+
+    scene.addQuad(Quad(Vec3(-2.2, -0.4, -2.8), Vec3(0.9, 0, 0), Vec3(0, 1.3, 0), 
+                       Material::makeDiffuse(Vec3(0.2, 0.7, 0.9))));
+    
+    scene.addQuad(Quad(Vec3(1.8, -0.3, -2.2), Vec3(0.7, 0, -0.2), Vec3(0, 1.1, 0), 
+                       Material::makeMetal(Vec3(0.9, 0.4, 0.6), 0.15)));
 
     
     std::cout << "Building BVH acceleration structure..." << std::endl;
