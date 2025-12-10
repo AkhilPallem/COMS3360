@@ -81,6 +81,8 @@ Vec3 randomInUnitDisk() {
     }
 }
 
+Vec3 getCheckerboardColor(const Vec3& p, double tileSize = 1.0);
+
 // Reflection for mirrors
 Vec3 reflect(const Vec3& v, const Vec3& n) {
     return v - n * (2.0 * v.dot(n));
@@ -792,6 +794,10 @@ public:
         HitRecord hit = intersect(ray);
         
         if (hit.hit) {
+            if (fabs(hit.point.y + 0.5) < 0.01) { 
+            hit.material.albedo = getCheckerboardColor(hit.point, 1.0);
+        }
+
             if (hit.material.type == EMISSIVE) {
                 return hit.material.emission;
             }
@@ -890,6 +896,13 @@ void writePPM(const std::string& filename, const std::vector<std::vector<Vec3>>&
     fclose(f);
 }
 
+Vec3 getCheckerboardColor(const Vec3& p, double tileSize) {
+    double x = floor(p.x / tileSize);
+    double z = floor(p.z / tileSize);
+    bool isBlack = ((int)(x + z) & 1);        
+    return isBlack ? Vec3(0.15, 0.15, 0.15) : Vec3(0.93, 0.93, 0.93);
+}
+
 int main() {
     const int imageWidth = 1200;
     const int imageHeight = 900;
@@ -899,10 +912,12 @@ int main() {
     
     Scene scene;
     
-    // Ground checkerboard 
-    Texture checker = Texture::makeCheckerboard(16);
-    scene.addSphere(Sphere(Vec3(0, -100.5, -1), 100, 
-                            Material::makeDiffuse(Vec3(1, 1, 1)), checker));
+    // Ground checkerboard pattern
+    auto checkerMaterial = Material::makeDiffuse(Vec3(1,1,1));
+    Vec3 floorCorner(-100, -0.5, -100);
+    Vec3 floorEdge1(200, 0, 0);
+    Vec3 floorEdge2(0, 0, 200);
+    scene.addQuad(Quad(floorCorner, floorEdge1, floorEdge2, checkerMaterial));
     
     //all spheres in the scene
     scene.addSphere(Sphere(Vec3(-1.1, 0.0, -0.8), 0.5,  Material::makeDielectric(1.5)));
