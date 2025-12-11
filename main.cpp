@@ -360,8 +360,13 @@ public:
     Texture texture;
     bool hasTexture;
     
-    Triangle(Vec3 a, Vec3 b, Vec3 c, Material mat) 
-        : v0(a), v1(b), v2(c), material(mat), hasTexture(false) {
+    Triangle(Vec3 a, Vec3 b, Vec3 c, Material mat) : v0(a), v1(b), v2(c), material(mat), hasTexture(false) {
+        Vec3 edge1 = v1 - v0;
+        Vec3 edge2 = v2 - v0;
+        normal = edge1.cross(edge2).normalize();
+    }
+
+    Triangle(Vec3 a, Vec3 b, Vec3 c, Material mat, Texture tex) : v0(a), v1(b), v2(c), material(mat), texture(tex), hasTexture(true) {
         Vec3 edge1 = v1 - v0;
         Vec3 edge2 = v2 - v0;
         normal = edge1.cross(edge2).normalize();
@@ -737,9 +742,22 @@ public:
                 if (spheres[i].hasTexture) best.material.albedo = best.material.albedo * spheres[i].texture.sample(h.u, h.v);
             }
         }
-        for (int i : node->triangleIndices) { HitRecord h = triangles[i].intersect(ray); if (h.hit && h.t < best.t) best = h; }
-        for (int i : node->smoothTriangleIndices) { HitRecord h = smoothTriangles[i].intersect(ray); if (h.hit && h.t < best.t) best = h; }
-        for (int i : node->quadIndices) { HitRecord h = quads[i].intersect(ray); if (h.hit && h.t < best.t) best = h; }
+        for (int i : node->triangleIndices) { 
+            HitRecord h = triangles[i].intersect(ray); 
+            if (h.hit && h.t < best.t) {
+                best = h;
+                if (triangles[i].hasTexture) 
+                    best.material.albedo = best.material.albedo * triangles[i].texture.sample(h.u, h.v);
+            }
+        }
+        for (int i : node->smoothTriangleIndices) { 
+            HitRecord h = smoothTriangles[i].intersect(ray); 
+            if (h.hit && h.t < best.t) best = h; 
+        }
+        for (int i : node->quadIndices) { 
+            HitRecord h = quads[i].intersect(ray); 
+            if (h.hit && h.t < best.t) best = h; 
+        }
         return best;
     }
 
@@ -944,6 +962,29 @@ int main() {
                                 Vec3(2.8, 0.2, -1.5), 
                                 Vec3(2.15, 1.5, -1.5),
                                 Material::makeMetal(Vec3(0.95, 0.6, 0.1), 0.15)));
+
+    //Make a texture triangle more visible with a different pattern from my floor                      
+    Texture stripedTexture;
+    stripedTexture.width = 16;
+    stripedTexture.height = 16;
+    stripedTexture.data.resize(16, std::vector<Vec3>(16));
+
+    for (int j = 0; j < 16; j++) {
+        for (int i = 0; i < 16; i++) {
+            if ((j / 2) % 2 == 0) {
+                stripedTexture.data[j][i] = Vec3(0.2, 0.4, 0.9);
+            } else {
+                stripedTexture.data[j][i] = Vec3(0.95, 0.85, 0.3); 
+            }
+        }
+    }
+    scene.addTriangle(Triangle(
+        Vec3(1.5, -0.5, -3.5), 
+        Vec3(3.5, -0.5, -3.5),  
+        Vec3(2.5, 2.0, -3.5),  
+        Material::makeDiffuse(Vec3(1.0, 1.0, 1.0)), 
+        stripedTexture
+    ));
 
     
     Vec3 sphereCenter(0.5, 0.4, -2);
