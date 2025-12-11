@@ -120,6 +120,7 @@ struct Material {
     double fuzz;
     double ior;
     Vec3 emission;
+    double noiseScale;
     
     Material() : type(DIFFUSE), albedo(0.5, 0.5, 0.5), fuzz(0), ior(1.5), emission(0, 0, 0) {}
     
@@ -151,6 +152,24 @@ struct Material {
         m.type = EMISSIVE;
         m.emission = color * intensity;
         m.albedo = Vec3(0, 0, 0);
+        return m;
+    }
+
+    static Material makePerlinNoise(const Vec3& color1, const Vec3& color2, double scale) {
+        Material m;
+        m.type = PERLIN_NOISE;
+        m.albedo = color1;     
+        m.emission = color2;  
+        m.noiseScale = scale;
+        return m;
+    }
+    
+    static Material makePerlinMarble(const Vec3& color1, const Vec3& color2, double scale) {
+        Material m;
+        m.type = PERLIN_MARBLE;
+        m.albedo = color1;
+        m.emission = color2;
+        m.noiseScale = scale;
         return m;
     }
 };
@@ -352,6 +371,8 @@ public:
         return fabs(accum);
     }
 };
+
+PerlinNoise globalPerlin;
 
 // Bounding box for acceleration
 struct AABB {
@@ -913,6 +934,28 @@ public:
             hit.material.albedo = getCheckerboardColor(hit.point, 1.0);
         }
 
+        if (hit.material.type == PERLIN_NOISE) {
+            double noiseValue = globalPerlin.turbulence(hit.point * hit.material.noiseScale);
+            noiseValue = (noiseValue + 1.0) * 0.5;
+            
+            Vec3 color = hit.material.albedo * (1.0 - noiseValue) + 
+                        hit.material.emission * noiseValue;
+            
+            hit.material.type = DIFFUSE;
+            hit.material.albedo = color;
+        }
+        else if (hit.material.type == PERLIN_MARBLE) {
+            double noiseValue = globalPerlin.turbulence(hit.point * hit.material.noiseScale);
+            double pattern = sin(hit.point.z * hit.material.noiseScale + 10.0 * noiseValue);
+            pattern = (pattern + 1.0) * 0.5;
+            
+            Vec3 color = hit.material.albedo * (1.0 - pattern) + 
+                        hit.material.emission * pattern;
+            
+            hit.material.type = DIFFUSE;
+            hit.material.albedo = color;
+        }
+
             if (hit.material.type == EMISSIVE) {
                 return hit.material.emission;
             }
@@ -1118,6 +1161,28 @@ int main() {
     scene.addQuad(Quad(Vec3(-2.2, -0.4, -2.8), Vec3(0.9, 0, 0), Vec3(0, 1.3, 0), Material::makeDiffuse(Vec3(0.2, 0.7, 0.9))));
     
     scene.addQuad(Quad(Vec3(1.8, -0.3, -2.2), Vec3(0.7, 0, -0.2), Vec3(0, 1.1, 0), Material::makeMetal(Vec3(0.9, 0.4, 0.6), 0.15)));
+
+    //Noise sphere
+    scene.addSphere(Sphere(
+        Vec3(-2.5, 0.3, -1.2),
+        0.5,
+        Material::makePerlinNoise(
+            Vec3(0.2, 0.3, 0.8), 
+            Vec3(0.9, 0.9, 0.95),
+            4.0          
+        )
+    ));
+
+    //Marble sphere
+    scene.addSphere(Sphere(
+    Vec3(2.8, 0.3, -1.2), 
+    0.5,
+    Material::makePerlinMarble(
+        Vec3(0.1, 0.1, 0.1),    
+        Vec3(0.9, 0.85, 0.8),   
+        3.0                      
+    )
+));
 
     
     std::cout << "Building BVH acceleration structure..." << std::endl;
