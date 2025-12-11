@@ -109,7 +109,9 @@ enum MaterialType {
     DIFFUSE,
     METAL,
     DIELECTRIC,
-    EMISSIVE
+    EMISSIVE,
+    PERLIN_NOISE,
+    PERLIN_MARBLE 
 };
 
 struct Material {
@@ -118,6 +120,7 @@ struct Material {
     double fuzz;
     double ior;
     Vec3 emission;
+    double noiseScale;
     
     Material() : type(DIFFUSE), albedo(0.5, 0.5, 0.5), fuzz(0), ior(1.5), emission(0, 0, 0) {}
     
@@ -149,6 +152,24 @@ struct Material {
         m.type = EMISSIVE;
         m.emission = color * intensity;
         m.albedo = Vec3(0, 0, 0);
+        return m;
+    }
+
+    static Material makePerlinNoise(const Vec3& color1, const Vec3& color2, double scale) {
+        Material m;
+        m.type = PERLIN_NOISE;
+        m.albedo = color1;     
+        m.emission = color2;  
+        m.noiseScale = scale;
+        return m;
+    }
+    
+    static Material makePerlinMarble(const Vec3& color1, const Vec3& color2, double scale) {
+        Material m;
+        m.type = PERLIN_MARBLE;
+        m.albedo = color1;
+        m.emission = color2;
+        m.noiseScale = scale;
         return m;
     }
 };
@@ -255,6 +276,103 @@ public:
         return tex;
     }
 };
+
+class PerlinNoise {
+private:
+    static const int pointCount = 256;
+    Vec3* randVec;
+    int* permX;
+    int* permY;
+    int* permZ;
+    
+    static int* perlinGeneratePerm() {
+        int* p = new int[pointCount];
+        for (int i = 0; i < pointCount; i++)
+            p[i] = i;
+        
+        for (int i = pointCount - 1; i > 0; i--) {
+            int target = int(randomDouble(0, i + 1));
+            std::swap(p[i], p[target]);
+        }
+        return p;
+    }
+    
+    static double perlinInterp(Vec3 c[2][2][2], double u, double v, double w) {
+        double uu = u * u * (3 - 2 * u);
+        double vv = v * v * (3 - 2 * v);
+        double ww = w * w * (3 - 2 * w);
+        double accum = 0.0;
+        
+        for (int i = 0; i < 2; i++)
+            for (int j = 0; j < 2; j++)
+                for (int k = 0; k < 2; k++) {
+                    Vec3 weightV(u - i, v - j, w - k);
+                    accum += (i * uu + (1 - i) * (1 - uu)) *
+                            (j * vv + (1 - j) * (1 - vv)) *
+                            (k * ww + (1 - k) * (1 - ww)) *
+                            c[i][j][k].dot(weightV);
+                }
+        return accum;
+    }
+    
+public:
+    PerlinNoise() {
+        randVec = new Vec3[pointCount];
+        for (int i = 0; i < pointCount; i++) {
+            randVec[i] = Vec3::random(-1, 1).normalize();
+        }
+        
+        permX = perlinGeneratePerm();
+        permY = perlinGeneratePerm();
+        permZ = perlinGeneratePerm();
+    }
+    
+    ~PerlinNoise() {
+        delete[] randVec;
+        delete[] permX;
+        delete[] permY;
+        delete[] permZ;
+    }
+    
+    double noise(const Vec3& p) const {
+        double u = p.x - floor(p.x);
+        double v = p.y - floor(p.y);
+        double w = p.z - floor(p.z);
+        
+        int i = int(floor(p.x));
+        int j = int(floor(p.y));
+        int k = int(floor(p.z));
+        
+        Vec3 c[2][2][2];
+        
+        for (int di = 0; di < 2; di++)
+            for (int dj = 0; dj < 2; dj++)
+                for (int dk = 0; dk < 2; dk++)
+                    c[di][dj][dk] = randVec[
+                        permX[(i + di) & 255] ^
+                        permY[(j + dj) & 255] ^
+                        permZ[(k + dk) & 255]
+                    ];
+        
+        return perlinInterp(c, u, v, w);
+    }
+    
+    double turbulence(const Vec3& p, int depth = 7) const {
+        double accum = 0.0;
+        Vec3 tempP = p;
+        double weight = 1.0;
+        
+        for (int i = 0; i < depth; i++) {
+            accum += weight * noise(tempP);
+            weight *= 0.5;
+            tempP = tempP * 2.0;
+        }
+        
+        return fabs(accum);
+    }
+};
+
+PerlinNoise globalPerlin;
 
 // Bounding box for acceleration
 struct AABB {
@@ -816,6 +934,28 @@ public:
             hit.material.albedo = getCheckerboardColor(hit.point, 1.0);
         }
 
+        if (hit.material.type == PERLIN_NOISE) {
+            double noiseValue = globalPerlin.turbulence(hit.point * hit.material.noiseScale);
+            noiseValue = (noiseValue + 1.0) * 0.5;
+            
+            Vec3 color = hit.material.albedo * (1.0 - noiseValue) + 
+                        hit.material.emission * noiseValue;
+            
+            hit.material.type = DIFFUSE;
+            hit.material.albedo = color;
+        }
+        else if (hit.material.type == PERLIN_MARBLE) {
+            double noiseValue = globalPerlin.turbulence(hit.point * hit.material.noiseScale);
+            double pattern = sin(hit.point.z * hit.material.noiseScale + 10.0 * noiseValue);
+            pattern = (pattern + 1.0) * 0.5;
+            
+            Vec3 color = hit.material.albedo * (1.0 - pattern) + 
+                        hit.material.emission * pattern;
+            
+            hit.material.type = DIFFUSE;
+            hit.material.albedo = color;
+        }
+
             if (hit.material.type == EMISSIVE) {
                 return hit.material.emission;
             }
@@ -1021,6 +1161,28 @@ int main() {
     scene.addQuad(Quad(Vec3(-2.2, -0.4, -2.8), Vec3(0.9, 0, 0), Vec3(0, 1.3, 0), Material::makeDiffuse(Vec3(0.2, 0.7, 0.9))));
     
     scene.addQuad(Quad(Vec3(1.8, -0.3, -2.2), Vec3(0.7, 0, -0.2), Vec3(0, 1.1, 0), Material::makeMetal(Vec3(0.9, 0.4, 0.6), 0.15)));
+
+    //Noise sphere
+    scene.addSphere(Sphere(
+        Vec3(-2.5, 0.3, -1.2),
+        0.5,
+        Material::makePerlinNoise(
+            Vec3(0.2, 0.3, 0.8), 
+            Vec3(0.9, 0.9, 0.95),
+            4.0          
+        )
+    ));
+
+    //Marble sphere
+    scene.addSphere(Sphere(
+    Vec3(2.8, 0.3, -1.2), 
+    0.5,
+    Material::makePerlinMarble(
+        Vec3(0.1, 0.1, 0.1),    
+        Vec3(0.9, 0.85, 0.8),   
+        3.0                      
+    )
+));
 
     
     std::cout << "Building BVH acceleration structure..." << std::endl;
