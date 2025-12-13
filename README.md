@@ -1,31 +1,77 @@
 # Ray Tracing Engine - COMS 3360
-# netID: apallem
-# email: apallem@iastate.edu
+NetID: apallem  
+Email: apallem@iastate.edu
 
-# Small note
-I forgot to make a git repo when I started this project, so the first commit is basically everything I've done so far with plenty left to do and clean up. 
+## Overview
+A C++ ray tracer implementation featuring physically based materials, spatial acceleration, and procedural textures. Renders to PPM format at 1200x900 resolution with 600 samples per pixel.
 
-## What's Working So Far
+## Build and Run
+make clean
+g++ -O3 -std=c++17 main.cpp -o raytracer (make file)
+./raytracer
+convert output.ppm output.png (see the image in png format)
 
-### Stuff so far complete but still needs tweaking (Required Features)
-- Camera that you can move around and change the FOV
-- Anti aliasing so edges don't look terrible
-- Spheres (3-4 so far)
-- Triangles(put 2 just so it was more visible)
-- Loading textures from PPM files
-- Putting textures on spheres
-- Diffuse materials (matte stuff like chalk)
-- Metal materials (shiny reflective surfaces)
-- Glass materials (see through)
-- Lights (emissive materials)
-- Loading 3D models from OBJ files
-- BVH acceleration so it doesn't take forever to render and does so in a timley manner
+## Core Features Implemented
+Camera System
+  - Configurable position, orientation, and field of view
+  - Thin lens model for depth of field effects
 
-### Some extra effects so far that will be built on
-- Depth of field blur 
-- Multiple light sources
-- Gamma correction so colors look right
+Anti-aliasing
+  - 600 samples per pixel with jittered sampling
+  - Reduces aliasing artifacts on edges
 
-## building and running:
-- g++ -O3 -std=c++17 main.cpp -o raytracer
-- ./raytracer 
+Geometric Primitives
+  - Ray/sphere intersections with UV mapping
+  - Ray/triangle intersections with UV mapping
+  - Quad primitives for planar surfaces
+  - Smooth triangles with vertex normal interpolation
+
+Texture System
+  - PPM format texture loading
+  - Texture mapping on spheres and triangles
+  - Procedural checkerboard pattern
+  - Custom stripe pattern generation
+
+3D Model Loading
+  - OBJ file format support
+  - Triangle mesh rendering
+
+Acceleration Structure
+  - BVH (Bounding Volume Hierarchy) with recursive subdivision
+
+Material Types
+  - Diffuse (Lambertian) with cosine-weighted scattering
+  - Specular (Metal) with configurable roughness
+  - Dielectric (Glass) with refraction and Schlick approximation
+  - Emissive materials for area light sources
+  - Perlin noise materials for procedural textures
+  - Marble materials with turbulence patterns
+
+## Additional Features (45 Points)
+Motion Blur (10 points)
+  - Time based sphere animation
+  - Temporal sampling across shutter interval
+  - Moving sphere support in BVH
+
+Depth of Field (10 points)
+  - Thin lens camera model
+  - Configurable aperture size
+  - Adjustable focus distance
+
+Perlin Noise (10 points)
+  - 3D gradient noise implementation
+  - Turbulence function with octaves
+  - Marble texture with sinusoidal patterns
+
+Normal Interpolation (5 points)
+  - Smooth triangle shading
+  - Vertex normal interpolation
+  - Improved appearance of low-poly geometry
+
+Quads (10 points)
+  - Planar quadrilateral primitives
+  - Decomposition into two triangles
+
+Custom things done 
+  - Gamma correction for color accuracy (was too bright so i adjusted this to make it look cleaner and more visible)
+  - Procedural ground plane with checkerboard pattern
