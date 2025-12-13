@@ -940,7 +940,6 @@ public:
                 std::string v1Str, v2Str, v3Str;
                 iss >> v1Str >> v2Str >> v3Str;
                 
-                // Parse vertex indices
                 int v1 = std::stoi(v1Str.substr(0, v1Str.find('/'))) - 1;
                 int v2 = std::stoi(v2Str.substr(0, v2Str.find('/'))) - 1;
                 int v3 = std::stoi(v3Str.substr(0, v3Str.find('/'))) - 1;
@@ -958,6 +957,50 @@ public:
         return true;
     }
 };
+
+//Adding high dynamic range feature 
+void writeHDR(const std::string& filename, const std::vector<std::vector<Vec3>>& image) {
+    int width = image[0].size();
+    int height = image.size();
+    
+    FILE* f = fopen(filename.c_str(), "wb");
+    if (!f) {
+        std::cout << "Failed to open HDR file for writing: " << filename << std::endl;
+        return;
+    }
+    
+    fprintf(f, "#?RADIANCE\n");
+    fprintf(f, "# Created by Ray Tracer\n");
+    fprintf(f, "FORMAT=32-bit_rle_rgbe\n\n");
+    fprintf(f, "-Y %d +X %d\n", height, width);
+    
+    for (int j = height - 1; j >= 0; --j) {
+        for (int i = 0; i < width; ++i) {
+            Vec3 color = image[j][i];
+            
+            double maxComponent = fmax(fmax(color.x, color.y), color.z);
+            
+            if (maxComponent < 1e-32) {
+                unsigned char rgbe[4] = {0, 0, 0, 0};
+                fwrite(rgbe, 1, 4, f);
+            } else {
+                int exponent;
+                double mantissa = frexp(maxComponent, &exponent) * 256.0 / maxComponent;
+                
+                unsigned char rgbe[4];
+                rgbe[0] = (unsigned char)(color.x * mantissa);
+                rgbe[1] = (unsigned char)(color.y * mantissa);
+                rgbe[2] = (unsigned char)(color.z * mantissa);
+                rgbe[3] = (unsigned char)(exponent + 128);
+                
+                fwrite(rgbe, 1, 4, f);
+            }
+        }
+    }
+    
+    fclose(f);
+    std::cout << "Saved HDR image: " << filename << std::endl;
+}
 
 // Write image to PPM file 
 void writePPM(const std::string& filename, const std::vector<std::vector<Vec3>>& image) {
@@ -1014,6 +1057,9 @@ int main() {
     Vec3 floorEdge1(200, 0, 0);
     Vec3 floorEdge2(0, 0, 200);
     scene.addQuad(Quad(floorCorner, floorEdge1, floorEdge2, checkerMaterial));
+
+    //Light to test HDR feature
+    scene.addSphere(Sphere(Vec3(0, 3.0, 0.0), 0.5, Material::makeEmissive(Vec3(1.0, 1.0, 1.0), 200))); 
     
     //all spheres in the scene
     scene.addSphere(Sphere(Vec3(-1.1, 0.0, -0.8), 0.5,  Material::makeDielectric(1.5)));
@@ -1027,8 +1073,6 @@ int main() {
     
     // Light sources
     scene.addSphere(Sphere(Vec3(-2.0, 3.0,  0.0), 0.6, Material::makeEmissive(Vec3(1.0, 0.95, 0.9), 70)));
-    //scene.addSphere(Sphere(Vec3( 2.0, 2.8, -1.0), 0.5, Material::makeEmissive(Vec3(0.9, 0.95, 1.0), 80)));
-    //scene.addSphere(Sphere(Vec3(-0.3, 2.2,  0.5), 0.4, Material::makeEmissive(Vec3(1.0, 1.0, 1.0), 90)));
 
     // Triangles 
     scene.addTriangle(Triangle(Vec3(-2, -0.3, -2), 
@@ -1164,7 +1208,9 @@ int main() {
     }
     
     writePPM("output.ppm", image);
-    std::cout << "Done! Image saved as output.ppm" << std::endl;
-    std::cout << "Command to convert to PNG: convert output.ppm output.png" << std::endl;
+    writeHDR("output.hdr", image);
+    std::cout << "Image saved as output.ppm" << std::endl;
+    std::cout << "Getting: output.hdr (HDR, full dynamic range) as well format" << std::endl;
+    std::cout << "Command to convert to PNG: convert output.ppm output.png. HDR Version: convert output.hdr output.png" << std::endl;
     return 0;
 }
