@@ -11,6 +11,10 @@
 #include <thread>
 #include <mutex>
 
+#include "vec3.h"
+#include "ray.h"
+#include "camera.h"
+
 // Random number gen
 std::random_device rd;
 std::mt19937 gen(rd());
@@ -23,43 +27,6 @@ double randomDouble() {
 double randomDouble(double min, double max) {
     return min + (max - min) * randomDouble();
 }
-
-// Basic 3D vector calcs 
-struct Vec3 {
-    double x, y, z;
-    
-    Vec3() : x(0), y(0), z(0) {}
-    Vec3(double x, double y, double z) : x(x), y(y), z(z) {}
-    
-    Vec3 operator+(const Vec3& v) const { return Vec3(x + v.x, y + v.y, z + v.z); }
-    Vec3 operator-(const Vec3& v) const { return Vec3(x - v.x, y - v.y, z - v.z); }
-    Vec3 operator-() const { return Vec3(-x, -y, -z); }
-    Vec3 operator*(double t) const { return Vec3(x * t, y * t, z * t); }
-    Vec3 operator/(double t) const { return Vec3(x / t, y / t, z / t); }
-    Vec3 operator*(const Vec3& v) const { return Vec3(x * v.x, y * v.y, z * v.z); }
-    
-    double dot(const Vec3& v) const { return x * v.x + y * v.y + z * v.z; }
-    Vec3 cross(const Vec3& v) const { 
-        return Vec3(y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x); 
-    }
-    
-    double length() const { return sqrt(x*x + y*y + z*z); }
-    double lengthSquared() const { return x*x + y*y + z*z; }
-    Vec3 normalize() const { double l = length(); return Vec3(x/l, y/l, z/l); }
-    
-    bool nearZero() const {
-        const double s = 1e-8;
-        return (fabs(x) < s) && (fabs(y) < s) && (fabs(z) < s);
-    }
-    
-    static Vec3 random() {
-        return Vec3(randomDouble(), randomDouble(), randomDouble());
-    }
-    
-    static Vec3 random(double min, double max) {
-        return Vec3(randomDouble(min, max), randomDouble(min, max), randomDouble(min, max));
-    }
-};
 
 // Random point in unit sphere for diffuse materials
 Vec3 randomInUnitSphere() {
@@ -97,17 +64,6 @@ Vec3 refract(const Vec3& uv, const Vec3& n, double etaiOverEtat) {
     Vec3 rOutParallel = n * (-sqrt(fabs(1.0 - rOutPerp.lengthSquared())));
     return rOutPerp + rOutParallel;
 }
-
-// Ray for tracing through scene
-struct Ray {
-    Vec3 origin, direction;
-    double time;
-    Ray() : origin(Vec3(0, 0, 0)), direction(Vec3(0, 0, 1)), time(0.0) {}
-    Ray(const Vec3& o, const Vec3& d) : origin(o), direction(d), time(0.0) {}
-    Ray(const Vec3& o, const Vec3& d, double t) : origin(o), direction(d), time(t) {}  
-    
-    Vec3 at(double t) const { return origin + direction * t; }
-};
 
 // Different material types
 enum MaterialType {
@@ -685,52 +641,6 @@ struct BVHNode {
     std::vector<int> quadIndices;
 
     bool isLeaf = false;
-};
-
-// Camera with configurable settings
-class Camera {
-public:
-    Vec3 position;
-    Vec3 target;
-    Vec3 up;
-    double fov;
-    double aspectRatio;
-    double aperture;
-    double focusDist;
-    
-    Vec3 u, v, w;
-    Vec3 horizontal, vertical, lowerLeftCorner;
-    double lensRadius;
-    
-    Camera(Vec3 pos, Vec3 tar, Vec3 vup, double fovDegrees, double aspect, 
-           double aperture = 0.0, double focusDist = 1.0) 
-        : position(pos), target(tar), up(vup), fov(fovDegrees), 
-          aspectRatio(aspect), aperture(aperture), focusDist(focusDist) {
-        
-        lensRadius = aperture / 2.0;
-        
-        double theta = fov * M_PI / 180.0;
-        double halfHeight = tan(theta / 2.0);
-        double halfWidth = aspectRatio * halfHeight;
-        
-        w = (position - target).normalize();
-        u = up.cross(w).normalize();
-        v = w.cross(u);
-        
-        horizontal = u * (2.0 * halfWidth * focusDist);
-        vertical = v * (2.0 * halfHeight * focusDist);
-        lowerLeftCorner = position - horizontal * 0.5 - vertical * 0.5 - w * focusDist;
-    }
-    
-    Ray getRay(double s, double t) const {
-        Vec3 rd = randomInUnitDisk() * lensRadius;
-        Vec3 offset = u * rd.x + v * rd.y;
-    
-        Vec3 direction = lowerLeftCorner + horizontal * s + vertical * t - position - offset;
-        double time = randomDouble();
-        
-        return Ray(position + offset, direction.normalize(), time);
-    }
 };
 
 // Material scattering behavior
