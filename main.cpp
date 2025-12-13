@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <sstream>
 #include <string>
+#include <thread>
+#include <mutex>
 
 // Random number gen
 std::random_device rd;
@@ -99,8 +101,11 @@ Vec3 refract(const Vec3& uv, const Vec3& n, double etaiOverEtat) {
 // Ray for tracing through scene
 struct Ray {
     Vec3 origin, direction;
-    Ray() : origin(Vec3(0, 0, 0)), direction(Vec3(0, 0, 1)) {}
-    Ray(const Vec3& o, const Vec3& d) : origin(o), direction(d) {}
+    double time;
+    Ray() : origin(Vec3(0, 0, 0)), direction(Vec3(0, 0, 1)), time(0.0) {}
+    Ray(const Vec3& o, const Vec3& d) : origin(o), direction(d), time(0.0) {}
+    Ray(const Vec3& o, const Vec3& d, double t) : origin(o), direction(d), time(t) {}  
+    
     Vec3 at(double t) const { return origin + direction * t; }
 };
 
@@ -421,16 +426,30 @@ public:
     Material material;
     Texture texture;
     bool hasTexture;
-    
-    Sphere(Vec3 c, double r, Material mat) 
-        : center(c), radius(r), material(mat), hasTexture(false) {}
+    bool isMoving;
+    Vec3 centerEnd;
     
     Sphere(Vec3 c, double r, Material mat, Texture tex) 
-        : center(c), radius(r), material(mat), texture(tex), hasTexture(true) {}
+    : center(c), radius(r), material(mat), texture(tex), hasTexture(true),
+      isMoving(false), centerEnd(c) {}
+
+    Sphere(Vec3 c, double r, Material mat) 
+    : center(c), radius(r), material(mat), hasTexture(false), 
+      isMoving(false), centerEnd(c) {}
+
+    Sphere(Vec3 centerStart, Vec3 centerEnd, double r, Material mat) : center(centerStart), radius(r), material(mat), hasTexture(false), isMoving(true), centerEnd(centerEnd) {}
+    
+    Vec3 centerAt(double time) const {
+        if (!isMoving) return center;
+        return center + (centerEnd - center) * time;
+    }
     
     HitRecord intersect(const Ray& ray) const {
         HitRecord rec;
-        Vec3 oc = ray.origin - center;
+
+        Vec3 currentCenter = centerAt(ray.time);
+        
+        Vec3 oc = ray.origin - currentCenter;
         double a = ray.direction.dot(ray.direction);
         double half_b = oc.dot(ray.direction);
         double c = oc.dot(oc) - radius * radius;
@@ -440,7 +459,6 @@ public:
 
         double sqrtd = sqrt(discriminant);
 
-        // Try nearer root first
         double t = (-half_b - sqrtd) / a;
         if (t <= 0.001) {
             t = (-half_b + sqrtd) / a;
@@ -449,7 +467,7 @@ public:
 
         rec.t = t;
         rec.point = ray.at(t);
-        Vec3 outwardNormal = (rec.point - center) / radius;  
+        Vec3 outwardNormal = (rec.point - currentCenter) / radius;  
         rec.setFaceNormal(ray, outwardNormal);
         rec.hit = true;
         rec.material = material;
@@ -464,8 +482,16 @@ public:
     }
     
     AABB boundingBox() const {
-        return AABB(center - Vec3(radius, radius, radius),
-                    center + Vec3(radius, radius, radius));
+        if (!isMoving) {
+            return AABB(center - Vec3(radius, radius, radius),
+                       center + Vec3(radius, radius, radius));
+        }
+
+        AABB box0(center - Vec3(radius, radius, radius),
+                  center + Vec3(radius, radius, radius));
+        AABB box1(centerEnd - Vec3(radius, radius, radius),
+                  centerEnd + Vec3(radius, radius, radius));
+        return AABB::surroundingBox(box0, box1);
     }
 };
 
@@ -699,9 +725,11 @@ public:
     Ray getRay(double s, double t) const {
         Vec3 rd = randomInUnitDisk() * lensRadius;
         Vec3 offset = u * rd.x + v * rd.y;
-        
+    
         Vec3 direction = lowerLeftCorner + horizontal * s + vertical * t - position - offset;
-        return Ray(position + offset, direction.normalize());
+        double time = randomDouble();
+        
+        return Ray(position + offset, direction.normalize(), time);
     }
 };
 
@@ -1126,6 +1154,15 @@ int main() {
         stripedTexture
     ));
 
+
+    scene.addSphere(Sphere(
+        Vec3(-1.9, 0.85, -5.2),
+        Vec3( 2.3, 0.85, -5.2),
+        0.22,
+        Material::makeEmissive(Vec3(1.0, 0.9, 0.7), 8)  
+    ));
+
+
     
     Vec3 sphereCenter(0.5, 0.4, -2);
     double r = 1.0;
@@ -1185,7 +1222,6 @@ int main() {
 ));
 
     
-    std::cout << "Building BVH acceleration structure..." << std::endl;
     scene.buildBVH();
     
     // Setup camera (a lot of diff angles to choose from but thinking this will show everything needed. might adjust as time goes on and more gets added)
