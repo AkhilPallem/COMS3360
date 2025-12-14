@@ -69,8 +69,15 @@ Normal Interpolation (5 points)
   - Improved appearance of low-poly geometry
 
 Quads (10 points)
-  - Planar quadrilateral primitives
-  - Decomposition into two triangles
+  - Adjusted this as I orginally had it as two trianagles but saw that did not count so switched the intersect method in it to work properly.
+
+High dynamic range images (10 points)
+ - Lights visible but may look blown out or a little too bright for the light i put in (intensity 200)
+ - Metal sphere shows some reflection
+
+Object instancing (10 points)
+- Efficient rendering of repeated geometry
+- Instanced sphere wall in background
 
 Custom things done 
   - Gamma correction for color accuracy (was too bright so i adjusted this to make it look cleaner and more visible)
