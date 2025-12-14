@@ -6,7 +6,6 @@
 #include <limits>
 #include <random>
 #include <algorithm>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <mutex>
@@ -15,18 +14,19 @@
 #include "ray.h"
 #include "camera.h"
 
-// Random number gen
-std::random_device rd;
-std::mt19937 gen(rd());
-std::uniform_real_distribution<> dis(0.0, 1.0);
+std::mutex coutMutex;  
 
-double randomDouble() {
-    return dis(gen);
-}
 
-double randomDouble(double min, double max) {
-    return min + (max - min) * randomDouble();
-}
+double randomDouble() {  
+    thread_local std::random_device rd;  
+    thread_local std::mt19937 gen(rd());  
+    thread_local std::uniform_real_distribution<> dis(0.0, 1.0);  
+    return dis(gen);  
+}  
+  
+double randomDouble(double min, double max) {  
+    return min + (max - min) * randomDouble();  
+}  
 
 // Random point in unit sphere for diffuse materials
 Vec3 randomInUnitSphere() {
@@ -1018,10 +1018,32 @@ void writePPM(const std::string& filename, const std::vector<std::vector<Vec3>>&
 }
 
 Vec3 getCheckerboardColor(const Vec3& p, double tileSize) {
-    double x = floor(p.x / tileSize);
-    double z = floor(p.z / tileSize);
-    bool isBlack = ((int)(x + z) & 1);        
+    int x = int(floor(p.x / tileSize));
+    int y = int(floor(p.y / tileSize));
+    int z = int(floor(p.z / tileSize));
+    bool isBlack = ((x + y + z) & 1);        
     return isBlack ? Vec3(0.15, 0.15, 0.15) : Vec3(0.93, 0.93, 0.93);
+}
+
+void renderRows(int startRow, int endRow, const Scene& scene, const Camera& camera,  std::vector<std::vector<Vec3>>& image, int samplesPerPixel, int maxDepth,  int imageWidth, int imageHeight) {  
+    for (int j = startRow; j < endRow; ++j) {  
+        if (j % 50 == 0) {  
+            std::lock_guard<std::mutex> lock(coutMutex);  
+            std::cout << "Progress: " << (100 * j / imageHeight) << "%" << std::endl;  
+        }
+        for (int i = 0; i < imageWidth; ++i) {  
+            Vec3 color(0, 0, 0);  
+            for (int s = 0; s < samplesPerPixel; ++s) {  
+                double u = (i + randomDouble()) / (imageWidth - 1);  
+                double v = (j + randomDouble()) / (imageHeight - 1);  
+                  
+                Ray ray = camera.getRay(u, v);  
+                color = color + scene.traceRay(ray, maxDepth);  
+            }  
+            color = color / samplesPerPixel;  
+            image[j][i] = color;  
+        }  
+    }  
 }
 
 int main() {
@@ -1178,28 +1200,28 @@ int main() {
     // Render and show progress in terminal 
     std::vector<std::vector<Vec3>> image(imageHeight, std::vector<Vec3>(imageWidth));
     
-    std::cout << "Rendering " << imageWidth << "x" << imageHeight 
-              << " with " << samplesPerPixel << " samples per pixel..." << std::endl;
+    std::cout << "Rendering " << imageWidth << "x" << imageHeight   
+            << " with " << samplesPerPixel << " samples per pixel using "   
+            << std::thread::hardware_concurrency() << " threads..." << std::endl;  
     
-    for (int j = 0; j < imageHeight; ++j) {
-        if (j % 50 == 0) {
-            std::cout << "Progress: " << (100 * j / imageHeight) << "%" << std::endl;
-        }
-        
-        for (int i = 0; i < imageWidth; ++i) {
-            Vec3 color(0, 0, 0);
-            for (int s = 0; s < samplesPerPixel; ++s) {
-                double u = (i + randomDouble()) / (imageWidth - 1);
-                double v = (j + randomDouble()) / (imageHeight - 1);
-                
-                Ray ray = camera.getRay(u, v);
-                color = color + scene.traceRay(ray, maxDepth);
-            }
-            
-            color = color / samplesPerPixel;
-            image[j][i] = color;
-        }
-    }
+    unsigned int numThreads = std::thread::hardware_concurrency();  
+    if (numThreads == 0) numThreads = 4; 
+    
+    std::vector<std::thread> threads;  
+    int rowsPerThread = imageHeight / numThreads;  
+    int extraRows = imageHeight % numThreads;  
+    int currentRow = 0;  
+    
+    for (unsigned int t = 0; t < numThreads; ++t) {  
+        int rowsThisThread = rowsPerThread + (t < extraRows ? 1 : 0);  
+        threads.emplace_back(renderRows, currentRow, currentRow + rowsThisThread,  
+                            std::ref(scene), std::ref(camera), std::ref(image),  
+                            samplesPerPixel, maxDepth, imageWidth, imageHeight);  
+        currentRow += rowsThisThread;  
+    }   
+    for (auto& th : threads) {  
+        th.join();  
+    }  
     
     writePPM("output.ppm", image);
     writeHDR("output.hdr", image);
