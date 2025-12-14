@@ -215,7 +215,6 @@ public:
         tex.data.resize(tex.height, std::vector<Vec3>(tex.width));
         
         if (magic == "P6") {
-            // Binary format
             for (int j = 0; j < tex.height; j++) {
                 for (int i = 0; i < tex.width; i++) {
                     unsigned char rgb[3];
@@ -449,12 +448,6 @@ public:
                   centerEnd + Vec3(radius, radius, radius));
         return AABB::surroundingBox(box0, box1);
     }
-};
-
-class Transform {
-public:
-    Vec3 pos;
-    Transform(Vec3 p) : pos(p) {}
 };
 
 // Sphere instance for instancing feature 
@@ -808,7 +801,7 @@ public:
         first = false;
     }
 
-    int total = sphereIdx.size() + triIdx.size() + smoothTriIdx.size();
+    int total = sphereIdx.size() + triIdx.size() + smoothTriIdx.size() + quadIdx.size();
     if (total <= 4 || depth > 20) {
         node->isLeaf = true;
         node->sphereIndices = std::move(sphereIdx);
