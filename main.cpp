@@ -456,6 +456,10 @@ public:
     int baseIdx;
     Vec3 position;
     Material mat;
+    bool useBaseMaterial;
+
+    SphereInstance(int idx, Vec3 pos, bool useBase = false) 
+        : baseIdx(idx), position(pos), mat(), useBaseMaterial(useBase) {}
     
     SphereInstance(int idx, Vec3 pos, Material m) : baseIdx(idx), position(pos), mat(m) {}
     
@@ -464,7 +468,9 @@ public:
         HitRecord rec = base.intersect(localRay);
         if (rec.hit) {
             rec.point = rec.point + position; 
-            rec.material = mat;
+            if (!useBaseMaterial) {
+                rec.material = mat;
+            }
         }
         return rec;
     }
@@ -932,50 +938,6 @@ public:
         return Vec3(1.0, 1.0, 1.0) * (1.0 - t) + backgroundColor * t;
     }
     
-    // Load OBJ mesh file
-    bool loadOBJ(const std::string& filename, Material mat) {
-        std::ifstream file(filename);
-        if (!file.is_open()) {
-            std::cout << "Failed to open OBJ file: " << filename << std::endl;
-            return false;
-        }
-        
-        std::vector<Vec3> vertices;
-        std::string line;
-        int triCount = 0;
-        
-        while (std::getline(file, line)) {
-            std::istringstream iss(line);
-            std::string type;
-            iss >> type;
-            
-            if (type == "v") {
-                // Vertex position
-                double x, y, z;
-                iss >> x >> y >> z;
-                vertices.push_back(Vec3(x, y, z));
-            }
-            else if (type == "f") {
-                // Face (triangle)
-                std::string v1Str, v2Str, v3Str;
-                iss >> v1Str >> v2Str >> v3Str;
-                
-                int v1 = std::stoi(v1Str.substr(0, v1Str.find('/'))) - 1;
-                int v2 = std::stoi(v2Str.substr(0, v2Str.find('/'))) - 1;
-                int v3 = std::stoi(v3Str.substr(0, v3Str.find('/'))) - 1;
-                
-                if (v1 >= 0 && v1 < vertices.size() &&
-                    v2 >= 0 && v2 < vertices.size() &&
-                    v3 >= 0 && v3 < vertices.size()) {
-                    addTriangle(Triangle(vertices[v1], vertices[v2], vertices[v3], mat));
-                    triCount++;
-                }
-            }
-        }
-        
-        std::cout << "Loaded OBJ: " << filename << " (" << triCount << " triangles)" << std::endl;
-        return true;
-    }
 };
 
 //Adding high dynamic range feature 
@@ -1137,17 +1099,16 @@ int main() {
     ));
 
     //Test object instancing feature
+    Texture earthTexture = Texture::loadFromPPM("earthmap.ppm");
     int baseIdx = scene.spheres.size();
-    scene.addSphere(Sphere(Vec3(0, 0, 0), 0.2, Material::makeDiffuse(Vec3(1, 1, 1))));
+    scene.addSphere(Sphere(Vec3(0, 0, 0), 0.2, Material::makeDiffuse(Vec3(1, 1, 1)), earthTexture));
 
     for (int row = 0; row < 8; row++) {
-        for (int col = 0; col < 12; col++) {
-            Vec3 pos(-3.0 + col * 0.5, -0.3 + row * 0.5, -8.0);
-            double t = (row * 12 + col) / 96.0;
-            Vec3 color(0.3 + 0.7 * t, 0.3 + 0.7 * (1-t), 0.5);
-            scene.addInstance(SphereInstance(baseIdx, pos, Material::makeDiffuse(color)));
-        }
+    for (int col = 0; col < 12; col++) {
+        Vec3 pos(-3.0 + col * 0.5, -0.3 + row * 0.5, -8.0);
+        scene.addInstance(SphereInstance(baseIdx, pos, true));  
     }
+}
 
 
     
