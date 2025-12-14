@@ -451,6 +451,33 @@ public:
     }
 };
 
+class Transform {
+public:
+    Vec3 pos;
+    Transform(Vec3 p) : pos(p) {}
+};
+
+// Sphere instance for instancing feature 
+class SphereInstance {
+public:
+    int baseIdx;
+    Vec3 position;
+    Material mat;
+    
+    SphereInstance(int idx, Vec3 pos, Material m) : baseIdx(idx), position(pos), mat(m) {}
+    
+    HitRecord intersect(const Ray& ray, const Sphere& base) const {
+        Ray localRay(ray.origin - position, ray.direction, ray.time);
+        HitRecord rec = base.intersect(localRay);
+        if (rec.hit) {
+            rec.point = rec.point + position; 
+            rec.material = mat;
+        }
+        return rec;
+    }
+};
+
+
 // Triangle primitive
 class Triangle {
 public:
@@ -589,27 +616,46 @@ public:
     Vec3 corner;
     Vec3 u, v;  
     Material material;
+    Vec3 normal;
+    double d;
+    Vec3 w;
     
-    Quad(Vec3 c, Vec3 edge1, Vec3 edge2, Material mat): corner(c), u(edge1), v(edge2), material(mat) {}
+    Quad(Vec3 c, Vec3 edge1, Vec3 edge2, Material mat): corner(c), u(edge1), v(edge2), material(mat) {
+        Vec3 n = u.cross(v);
+        normal = n.normalize();
+        d = normal.dot(corner);
+        w = n / n.dot(n);
+    }
     
     HitRecord intersect(const Ray& ray) const {
-        Vec3 p0 = corner;
-        Vec3 p1 = corner + u;
-        Vec3 p2 = corner + u + v;
-        Vec3 p3 = corner + v;
+        HitRecord rec;
         
-        Triangle tri1(p0, p1, p2, material);
-        HitRecord hit1 = tri1.intersect(ray);
+        double denom = normal.dot(ray.direction);
+        if (fabs(denom) < 1e-8)
+            return rec;
+        double t = (d - normal.dot(ray.origin)) / denom;
         
-        Triangle tri2(p0, p2, p3, material);
-        HitRecord hit2 = tri2.intersect(ray);
+        if (t < 0.001)
+            return rec;
         
-        if (hit1.hit && hit2.hit)
-            return hit1.t < hit2.t ? hit1 : hit2;
-        if (hit1.hit) return hit1;
-        if (hit2.hit) return hit2;
+        Vec3 intersection = ray.at(t);
         
-        return HitRecord();
+        Vec3 p = intersection - corner;
+        double alpha = w.dot(p.cross(v));
+        double beta = w.dot(u.cross(p));
+        
+        if (alpha < 0.0 || alpha > 1.0 || beta < 0.0 || beta > 1.0)
+            return rec;
+        
+        rec.t = t;
+        rec.point = intersection;
+        rec.setFaceNormal(ray, normal);
+        rec.hit = true;
+        rec.material = material;
+        rec.u = alpha;
+        rec.v = beta;
+        
+        return rec;
     }
     
     AABB boundingBox() const {
@@ -697,6 +743,7 @@ public:
     Vec3 backgroundColor;
     std::shared_ptr<BVHNode> bvhRoot;
     std::vector<Quad> quads;
+    std::vector<SphereInstance> instances;
     
     Scene() : backgroundColor(0.7, 0.8, 1.0) {}
     
@@ -714,6 +761,10 @@ public:
     
     void addQuad(const Quad& quad) { 
         quads.push_back(quad);
+    }
+
+    void addInstance(const SphereInstance& inst) {  
+        instances.push_back(inst);
     }
 
     // Build BVH tree for faster rendering
@@ -823,37 +874,13 @@ public:
 }
     
     HitRecord intersect(const Ray& ray) const {
-        if (bvhRoot)
-            return intersectBVH(ray, bvhRoot);
-        
         HitRecord closestHit;
         closestHit.t = std::numeric_limits<double>::max();
-        
-        for (const auto& sphere : spheres) {
-            HitRecord hit = sphere.intersect(ray);
-            if (hit.hit && hit.t < closestHit.t) {
-                closestHit = hit;
-                if (sphere.hasTexture) {
-                    Vec3 texColor = sphere.texture.sample(hit.u, hit.v);
-                    closestHit.material.albedo = closestHit.material.albedo * texColor;
-                }
-            }
+        if (bvhRoot) {
+            closestHit = intersectBVH(ray, bvhRoot);
         }
-        
-        for (const auto& tri : triangles) {
-            HitRecord hit = tri.intersect(ray);
-            if (hit.hit && hit.t < closestHit.t)
-                closestHit = hit;
-        }
-
-        for (const auto& smoothTri : smoothTriangles) {
-            HitRecord hit = smoothTri.intersect(ray);
-            if (hit.hit && hit.t < closestHit.t)
-                closestHit = hit;
-        }
-
-        for (const auto& quad : quads) { 
-            HitRecord hit = quad.intersect(ray);
+        for (const auto& inst : instances) {
+            HitRecord hit = inst.intersect(ray, spheres[inst.baseIdx]);
             if (hit.hit && hit.t < closestHit.t)
                 closestHit = hit;
         }
@@ -1115,6 +1142,19 @@ int main() {
         0.22,
         Material::makeEmissive(Vec3(1.0, 0.9, 0.7), 8)  
     ));
+
+    //Test object instancing feature
+    int baseIdx = scene.spheres.size();
+    scene.addSphere(Sphere(Vec3(0, 0, 0), 0.2, Material::makeDiffuse(Vec3(1, 1, 1))));
+
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 12; col++) {
+            Vec3 pos(-3.0 + col * 0.5, -0.3 + row * 0.5, -8.0);
+            double t = (row * 12 + col) / 96.0;
+            Vec3 color(0.3 + 0.7 * t, 0.3 + 0.7 * (1-t), 0.5);
+            scene.addInstance(SphereInstance(baseIdx, pos, Material::makeDiffuse(color)));
+        }
+    }
 
 
     
