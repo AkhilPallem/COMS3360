@@ -47,7 +47,7 @@ Material Types
   - Perlin noise materials for procedural textures
   - Marble materials with turbulence patterns
 
-## Additional Features (45 Points)
+## Additional Features (75 Points)
 Motion Blur (10 points)
   - Time based sphere animation
   - Temporal sampling across shutter interval
@@ -79,6 +79,6 @@ Object instancing (10 points)
 - Efficient rendering of repeated geometry
 - Instanced sphere wall in background
 
-Custom things done 
-  - Gamma correction for color accuracy (was too bright so i adjusted this to make it look cleaner and more visible)
-  - Procedural ground plane with checkerboard pattern
+Parallelization (10 points)
+- multithreading 
+- speed up rendering time
